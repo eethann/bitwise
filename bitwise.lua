@@ -41,7 +41,7 @@
 -- * EC: implement grid
 -- * Clean up single-bit gate calc
 
-engine.name = "Thebangs"
+engine.name = "PolyPerc"
 -- Leftover from byte sequencer
 -- s = require("sequins")
 MusicUtil = require("musicutil")
@@ -97,8 +97,9 @@ function init()
   local base_note_spec = controlspec.MIDINOTE
   base_note_spec.default = 24
   params:add_control("base_note","base note",base_note_spec)
-  params:set_action("base_note", function(n) base_note = n end)
-  base_note = 24
+  -- TODO debug why this is getting set to fractional in the params screen
+  params:set_action("base_note", function(n) base_note = math.floor(n) end)
+  base_note = params:get("base_note")
 
   local scale_names = {}
   for i = 1, #MusicUtil.SCALES do
@@ -369,9 +370,9 @@ function redraw()
     screen.font_size(8) ---------- set the size to 8
     -- screen.move(4,64)
     -- screen.text(tick or "--")
-    screen.move(4, 7) ---------- move the pointer to x = 64, y = 32
-    screen.text(message) 
-    screen.fill() ---------------- fill the termini and message at once
+    -- screen.move(4, 7) ---------- move the pointer to x = 64, y = 32
+    -- screen.text(message) 
+    -- screen.fill() ---------------- fill the termini and message at once
     draw_bin(gates,8,10,28,106,8,focus_control == 2 and 8 or 2,gates_p)
     draw_bin(arg,8,10,36,106,8,focus_control == 3 and 8 or 2,arg_p)
     screen.level(15)
