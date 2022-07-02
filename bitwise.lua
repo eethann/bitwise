@@ -15,20 +15,20 @@
 -- >> e3: l/r rotate both
 -- >> [+ k1]:[oposite directions]
 -- > GATE BYTE:
--- >> k3 [+ k1]: not [reflect] 
--- >> e3: +/- value
--- >> [+ k1]: +/- upper nibble
--- >> [+ k2]: l/r rotate
--- >> [+ k1 k2]: l/r shift
+-- >> k3 [+ k1]: not [reflect TODO] 
+-- >> e3: l/r rotate
+-- >> [+ k1]: l/r shift
+-- >> [+ k2]: +/- value
+-- >> [+ k1 k2]: +/- upper nibble
 --
 -- NOTES PAGE controls
 -- > Each BIT SEQUENCE BYTE
 -- >> k2 [+ k1]: not [momentary] 
 -- >> k3 [ + k1]: reflect [momentary]
--- >> e3: +/- value
--- >> [+ k1]: +/- upper nibble
--- >> [+ k1 k2]: l/r rotate
--- >> [+ k1 k3]: l/r shift
+-- >> e3: l/r rotate
+-- >> [+ k1]: l/r shift
+-- >> [+ k2]: +/- value
+-- >> [+ k1 k2]: +/- upper nibble
 --
 -- TODO
 -- * implement probability (fix notes display)
@@ -45,6 +45,20 @@ engine.name = "PolyPerc"
 -- Leftover from byte sequencer
 -- s = require("sequins")
 MusicUtil = require("musicutil")
+
+local function bit8_rrot(n,d)
+  -- if d==1, compliment is -7, if -2 then 6
+  local d_8_compliment = -1 * math.floor(d/math.abs(d)) * (8 - math.abs(d))
+  return bit32.band(0xFF,bit32.rshift(n,d) + bit32.rshift(n,d_8_compliment))
+end
+
+local function bit8_rshift(n,d)
+  return bit32.band(0xFF,bit32.rshift(n,d))
+end
+
+local function bit8_bnot(n)
+  return bit32.band(0xFF,bit32.bnot(n))
+end
 
 op_fns = {
   xor = bit32.bxor,
@@ -126,6 +140,7 @@ function init()
   note_bit_ps = {1,1,1,1}
   arg_p = 1
   gates_p = 1
+  op_p = 0
   
   tick = 0
   opd_gates = 0
@@ -156,6 +171,7 @@ function init()
         op = gate_op -- or seq_op
         -- TODO optimize this so we're not recalculating full byte each time
         local new_opd_gates = op_fns[op](math.random() < gates_p and gates or 0,math.random() < arg_p and arg or 0)
+        new_opd_gates = math.random() < op_p and bit8_bnot(new_opd_gates) or new_opd_gates
         -- only update current bit
         -- (overwrite that bit in opd_gates by setting to try then anding with new product)
         opd_gates = bit32.bor(bit32.band(opd_gates,0xFF-2^(bit_num-1)),bit32.band(new_opd_gates,2^(bit_num-1)))
@@ -188,20 +204,6 @@ function enc(e, d)
   screen_dirty = true
 end
 
-local function bit8_rrot(n,d)
-  -- if d==1, compliment is -7, if -2 then 6
-  local d_8_compliment = -1 * math.floor(d/math.abs(d)) * (8 - math.abs(d))
-  return bit32.band(0xFF,bit32.rshift(n,d) + bit32.rshift(n,d_8_compliment))
-end
-
-local function bit8_rshift(n,d)
-  return bit32.band(0xFF,bit32.rshift(n,d))
-end
-
-local function bit8_bnot(n)
-  return bit32.band(0xFF,bit32.bnot(n))
-end
-
 function turn(e, d) ----------------------------- an encoder has turned
   screen_dirty = true
   if e == 1 then
@@ -213,7 +215,9 @@ function turn(e, d) ----------------------------- an encoder has turned
   if active_mode == 1 then
     if e == 2 then
       if keys[1] == 1 then
-        if focus_control == 2 then
+        if focus_control == 1 then
+          op_p = util.clamp(op_p+d/10,0,1)
+        elseif focus_control == 2 then
           gates_p = util.clamp(gates_p+d/10,0,1)
         elseif focus_control == 3 then
           arg_p = util.clamp(arg_p+d/10,0,1)
@@ -229,20 +233,20 @@ function turn(e, d) ----------------------------- an encoder has turned
         arg = bit8_rrot(arg,inverse*d)
       else
         if keys[2] == 1 then
-          -- rot / shift
-          local enc_op = (keys[1] ~= 1) and bit8_rrot or bit8_rshift
-          if focus_control == 2 then
-            gates = enc_op(gates,d)
-          else
-            arg = enc_op(arg,d)
-          end
-        else
           -- inc byte / most significant nibble
           local amt = d * ((keys[1] == 1) and 0x10 or 1)
           if focus_control == 2 then
             gates = util.wrap(gates+amt,0,256)
           else
             arg = util.wrap(arg+amt,0,256)
+          end
+        else
+          -- rot / shift
+          local enc_op = (keys[1] ~= 1) and bit8_rrot or bit8_rshift
+          if focus_control == 2 then
+            gates = enc_op(gates,d)
+          else
+            arg = enc_op(arg,d)
           end
         end
       end
@@ -258,13 +262,13 @@ function turn(e, d) ----------------------------- an encoder has turned
       -- TODO confirm this is a reference
       local subject = note_bit_bytes[focus_control]
       if keys[2] == 1 then
-        -- rot / shift depends on k[1]
-        local enc_op = (keys[1] ~= 1) and bit8_rrot or bit8_rshift
-        note_bit_bytes[focus_control]= enc_op(subject,d)
-      else
         -- inc byte / most significant nibble depending on k[1]
         local amt = d * ((keys[1] == 1) and 0x10 or 1)
         note_bit_bytes[focus_control]= util.wrap(subject+amt,0,256)
+      else
+        -- rot / shift depends on k[1]
+        local enc_op = (keys[1] ~= 1) and bit8_rrot or bit8_rshift
+        note_bit_bytes[focus_control]= enc_op(subject,d)
       end
     end
   end
@@ -363,8 +367,13 @@ function redraw()
     -- screen.move(4,24)
     -- screen.text(hexfmt(gates))
     screen.move(64,24)
-    screen.level(focus_control == 1 and 8 or 2)
+    local op_level = focus_control == 1 and 10 or 2 
+    screen.level(op_level)
     screen.text_center(op or "--")
+    local op_text_width = screen.text_extents(op or "--")
+    screen.move(64-math.floor(op_text_width/2)-6,24)
+    screen.level(math.ceil(op_level * op_p))
+    screen.text("!")
     -- screen.move(128,24)
     -- screen.text_right(hexfmt(arg))
     screen.font_size(8) ---------- set the size to 8
