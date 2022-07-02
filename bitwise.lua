@@ -305,7 +305,7 @@ function key(k, z)
     end
   elseif active_mode == 2 then
     if z == 1 then
-      if k == 2 then
+      if k == 3 then
         note_bit_bytes[focus_control] = bit32.band(0xFF,bit32.bnot(note_bit_bytes[focus_control]))
       end
     end
@@ -334,11 +334,14 @@ function draw_bin(num,bits,x,y,w,h,level,hilite_tick)
   screen.rect(x,y,w,h)
   screen.stroke()
   for i=1,bits do
+    local do_highlight = (hilite_tick ~= nil) and (8 - (tick - 1) % 8) == i
     if bit32.band(num,2^(bits-i)) ~= 0 then
-      screen.level(((hilite_tick ~= nil) and (8 - (tick - 1) % 8) == i) and 15 or level)
-      screen.rect(x+(i-1)*xd,y,xd,h)
-      screen.fill()
+      screen.level(do_highlight and 15 or level)
+    else
+      screen.level(do_highlight and 1 or 0)
     end
+    screen.rect(x+(i-1)*xd,y,xd,h)
+    screen.fill()
   end
 end
 
