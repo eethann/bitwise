@@ -166,7 +166,7 @@ local function get_note_bit_bytes_step(step)
   local note = 0
   for i=1,#note_bit_bytes do
     local flip = prob_mode == 2 and coin_flip(note_bit_ps[i]) or true
-    note = note + (flip and bit_value(note_bit_bytes[i],step)*math.floor(2^(i-1)) or 0)
+    note = note + (flip and bit_value(note_bit_bytes[i],step)*params:get("interval_"..i) or 0)
   end
   return note
 end
@@ -188,7 +188,7 @@ function init()
   redraw_clock_id = clock.run(redraw_clock)
 
   params:add_separator("Bitwise")
-  params:add_group("Scale",2)
+  params:add_group("Notes",6)
   local base_note_spec = controlspec.MIDINOTE
   base_note_spec.default = 24
   base_note_spec.quantum = 1
@@ -207,6 +207,11 @@ function init()
     action = function() build_scale() end
   })
   build_scale()
+
+  params:add_number("interval_1","interval 1", -24, 24, 1)
+  params:add_number("interval_2","interval 2", -24, 24, 2)
+  params:add_number("interval_3","interval 3", -24, 24, 4)
+  params:add_number("interval_4","interval 4", -24, 24, 8)
 
   params:add_group("Probability",1)
   params:add_option("prob_mode","Probability Mode",{"stability","trigger"},1)
@@ -564,7 +569,7 @@ function redraw()
     for i=1,4 do
       screen.level((focus_control == i) and 15 or 4)
       screen.move(1,i*10)
-      screen.text(math.floor(2^(i-1)))
+      screen.text(params:get("interval_"..i))
       draw_bin(note_bit_bytes[i],8,10,i*10-5,106,period,focus_control == i,1-note_bit_ps[i],1)
     end
   end
