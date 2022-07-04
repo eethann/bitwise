@@ -89,6 +89,10 @@
 -- * add a drum kit / sampler?
 -- * add swing
 -- * Refactor prob code so we don't need to invert the UI
+-- * Add k1+e1 "lock all" option to manage randomness globally
+-- * Add "focus all" for notes that edits all bytes together
+-- * Add "reset" option to start ticks from 1 (clock start?)
+-- * Add params for each interval of note bytes bits
 
 engine.name = "PolyPerc"
 -- Leftover from byte sequencer
@@ -151,6 +155,12 @@ local function is_bit_set(n,b)
   return (bit_value(n,b) ~= 0)  
 end
 
+local function coin_flip(p)
+  return (p == 1 and true)
+    or (p == 0 and false)
+    or (math.random() < p)
+end
+
 local function get_note_bit_bytes_step(step)
   local note = 0
   for i=1,#note_bit_bytes do
@@ -163,12 +173,6 @@ end
 -- TODO separate root_note from base_note so you can have root_note for a scale with a different base note
 function build_scale() 
   scale = MusicUtil.generate_scale(params:get("base_note"), params:get("scale_mode"),8)
-end
-
-local function coin_flip(p)
-  return (p == 1 and true)
-    or (p == 0 and false)
-    or (math.random() < p)
 end
 
 local function prob_flip_bit(num,bit,prob)
