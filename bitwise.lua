@@ -93,6 +93,7 @@
 -- * Add "focus all" for notes that edits all bytes together
 -- * Add "reset" option to start ticks from 1 (clock start?)
 -- * Add params for each interval of note bytes bits
+-- * Reworkd UI for trigger prob to be clearer
 
 engine.name = "PolyPerc"
 -- Leftover from byte sequencer
