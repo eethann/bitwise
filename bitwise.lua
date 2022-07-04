@@ -1,6 +1,6 @@
 -- BITWISE
 --
--- A stochastic bitwise sequencer
+-- A probablistic bitwise sequencer
 -- intended for live play.
 --
 -- UI is split into two pages: 
@@ -10,7 +10,8 @@
 -- > k1: exit
 -- > e1: select page
 -- > e2: select control
--- > [+ k1]: change probability
+-- > [+ k1]: Set randomness
+-- > [+ k1 k2]: TBD
 --
 -- GATES PAGE controls
 -- > OPERATOR:
@@ -49,27 +50,55 @@
 -- of 2).
 --
 -- All controls can have a 
--- probability. For any byte, 
--- the probability is the 
+-- randomness amount. The
+-- higher the randomness
+-- the more likely that 
+-- control will be unstable.
+--  Probability has two possible 
+-- modes (set in a parameter).
+--
+-- "Stability" mode:
+-- Acts like an ASR, prob
+-- is the likelihood any bit
+-- changes when it comes up.
+-- Off means bits are totally
+-- stable, middle means they 
+-- have a 50% chance of
+-- flipping, and 100% means
+-- they will always flip.
+--
+-- "Trigger mode"
+-- For any byte, the 
+-- probability is the 
 -- likelihood that a 1 bit is 
--- actually on. 
+-- actually on when it
+-- comes up..
+--  
 -- For the operator the 
 -- probability chooses between 
 -- the op and its logical 
--- inverse.
+-- inverse, in both modes.
 -- 
 -- TODO
--- * Check all funcs against docs
--- * POST
+-- * Add MIDI
 -- * EC: implement grid
 -- * Clean up single-bit gate calc
 -- * replace most state vars with params
 -- * title all pages ?
+-- * add "mod" pages with flexible subjects (div, synth params, additional voices, etc)
+-- * add a drum kit / sampler?
+-- * add swing
+-- * Refactor prob code so we don't need to invert the UI
 
 engine.name = "PolyPerc"
 -- Leftover from byte sequencer
 -- s = require("sequins")
 MusicUtil = require("musicutil")
+
+-- 8 bit logic functions
+local function bit8(n)
+  return bit32.band(0xFF,n)
+end
 
 local function bit8_rrot(n,d)
   -- if d==1, compliment is -7, if -2 then 6
@@ -85,6 +114,15 @@ local function bit8_bnot(n)
   return bit32.band(0xFF,bit32.bnot(n))
 end
 
+local function bit8_get_bit(n,b)
+  return bit32.band(bit32.rshift(n,b-1),1)
+end
+
+local function bit8_set_bit(n,b,v)
+  v = v == 0 and 0 or 1
+  return bit32.bor(bit32.band(n,bit8_bnot(bit32.lshift(1,b-1))),bit8(bit32.lshift(v,b-1)))
+end
+
 op_fns = {
   xor = bit32.bxor,
   ["and"] = bit32.band,
@@ -95,12 +133,12 @@ op_fns = {
   end
 }
 
-op = "or"
+gate_op = "or"
 gates = 0x66
 gates_2 = 0x33
 
 tick = 0
-opd_gates = 0
+calcd_gates = 0
 active_mode = 1
 modes = {"gates","notes"}
 focus_control = 1
@@ -109,7 +147,6 @@ local function bit_value(n,b)
   return bit32.band(1,bit32.rshift(n,b-1))  
 end
 
-
 local function is_bit_set(n,b)
   return (bit_value(n,b) ~= 0)  
 end
@@ -117,8 +154,8 @@ end
 local function get_note_bit_bytes_step(step)
   local note = 0
   for i=1,#note_bit_bytes do
-    local prob = note_bit_ps[i]
-    note = note + (math.random() < prob and bit_value(note_bit_bytes[i],step)*math.floor(2^(i-1)) or 0)
+    local flip = prob_mode == 2 and coin_flip(note_bit_ps[i]) or true
+    note = note + (flip and bit_value(note_bit_bytes[i],step)*math.floor(2^(i-1)) or 0)
   end
   return note
 end
@@ -128,13 +165,28 @@ function build_scale()
   scale = MusicUtil.generate_scale(params:get("base_note"), params:get("scale_mode"),8)
 end
 
+local function coin_flip(p)
+  return (p == 1 and true)
+    or (p == 0 and false)
+    or (math.random() < p)
+end
+
+local function prob_flip_bit(num,bit,prob)
+  local mask = bit32.lshift(1,bit-1)
+  return coin_flip(prob) and num or bit8(bit32.bxor(num,mask))
+  -- return coin_flip(prob) and num or bit8_set_bit(num, bit, bit8_get_bit(num, bit) == 1 and 0 or 1)
+end
+
 function init()
   message = "BITWISE"
   screen_dirty = true
   redraw_clock_id = clock.run(redraw_clock)
 
+  params:add_separator("Bitwise")
+  params:add_group("Scale",2)
   local base_note_spec = controlspec.MIDINOTE
   base_note_spec.default = 24
+  base_note_spec.quantum = 1
   params:add_control("base_note","base note",base_note_spec)
   -- TODO debug why this is getting set to fractional in the params screen
   params:set_action("base_note", function(n) base_note = math.floor(n) end)
@@ -149,9 +201,31 @@ function init()
     options = scale_names, default = 5,
     action = function() build_scale() end
   })
-
   build_scale()
 
+  params:add_group("Probability",1)
+  params:add_option("prob_mode","Probability Mode",{"stability","trigger"},1)
+  params:set_action("prob_mode", function(n) prob_mode = n end)
+  prob_mode = params:get("prob_mode")
+
+  -- TODO fix swing (see loop below)
+  -- params:add_group("Clock",1)
+  -- -- TODO add clock tempo control here for easy access
+  -- swing_spec = controlspec.def{
+  --   min=0.00,
+  --   max=100.0,
+  --   warp='lin',
+  --   step=1,
+  --   default=50,
+  --   quantum=0.01,
+  --   wrap=false,
+  --   units='%'
+  -- }
+  -- params:add_control("swing","swing",swing_spec)
+  -- params:set_action("swing", function(n) swing = n end)
+  -- swing = params:get("swing")
+
+  -- State vars
   notes = {}
   note_bit_bytes = {
     0x55,
@@ -161,14 +235,15 @@ function init()
   }
   gates = 0x55
   gates_2 = 0x33
-  op = "or"
+  gate_op = "or"
+
   note_bit_ps = {1,1,1,1}
   gates_2_p = 1
   gates_p = 1
-  op_p = 0
+  gate_op_p = 1
   
   tick = 0
-  opd_gates = 0
+  calcd_gates = 0xFF
 
   -- Left-overs from sequencer
   -- ops = {"xor","and","or","xor"}
@@ -177,39 +252,51 @@ function init()
   -- args = {0x77,0xfc,0x81}
   -- args_seq = s(args)
   
-  local op_period = 8
+  period = 8
   div = 4
-  
-  gate_op = "or"
+  tick = 0
   
   sequence = clock.run(
     function()
       while true do
-        clock.sync(1/div)
-        tick = math.floor(clock.get_beats()*div)
-        local bit_num = ((tick - 1) % op_period) + 1
-        -- local seq_op
-        -- if seq_op == nil or arg == nil or (tick % op_period) == 1 then
-          -- arg = args_seq()  
-          -- seq_op = ops_seq()
-        -- end
-        op = gate_op -- or seq_op
+        tick = tick + 1
+        -- 50% swing is 100% tick width all the time
+        -- TODO fix swing, most likely need to quantize to internal clock pulses
+        -- local tick_width = (tick % 2 == 1) and (2 * swing/100) or (2 * (1 - swing/100))
+        local tick_width = 1
+        clock.sync(tick_width / div)
+        -- tick = math.floor(clock.get_beats()*div)
+        bit_num = ((tick - 1) % period) + 1
+        gate_op = gate_op -- or seq_op
+        local new_calcd_gates
+        if prob_mode == 1 then
+          -- Update patterns depending on pility setting
+          gates = prob_flip_bit(gates,bit_num,gates_p)
+          gates_2 = prob_flip_bit(gates_2,bit_num,gates_2_p)
+          for i=1,4 do
+            note_bit_bytes[i] = prob_flip_bit(note_bit_bytes[i], bit_num, note_bit_ps[i])
+          end
+          new_calcd_gates = op_fns[gate_op](gates,gates_2)
+        elseif prob_mode == 2 then
         -- TODO optimize this so we're not recalculating full byte each time
-        local new_opd_gates = op_fns[op](math.random() < gates_p and gates or 0,math.random() < gates_2_p and gates_2 or 0)
-        new_opd_gates = math.random() < op_p and bit8_bnot(new_opd_gates) or new_opd_gates
-        -- only update current bit
-        -- (overwrite that bit in opd_gates by setting to try then anding with new product)
-        opd_gates = bit32.bor(bit32.band(opd_gates,0xFF-2^(bit_num-1)),bit32.band(new_opd_gates,2^(bit_num-1)))
+          new_calcd_gates = op_fns[gate_op](coin_flip(gates_p) and gates or 0,coin_flip(gates_2_p) and gates_2 or 0)
+          -- only update current bit
+          -- (overwrite that bit in calcd_gates by setting to try then anding with new product)
+          calcd_gates = bit8_set_bit(calcd_gates,bit_num, bit8_get_bit(new_calcd_gates,bit_num))
+        end
+        -- gate op prob always functions the same (unstable ops feels too random)
+        local new_bit = bit8_get_bit(coin_flip(gate_op_p) and new_calcd_gates or bit8_bnot(calcd_gates),bit_num)
+        calcd_gates = bit8_set_bit(calcd_gates,bit_num,new_bit)
+        -- get_note_bit_bytes_step includes trigger prob_mode logic
+        -- TODO refactor trigger logic out of get_note_bit_bytes_step
         local note = base_note + get_note_bit_bytes_step(bit_num)
         notes[bit_num] = note
         -- TODO add MIDI out option
-        if is_bit_set(opd_gates,bit_num) then
+        if is_bit_set(calcd_gates,bit_num) then
           engine.hz(MusicUtil.note_num_to_freq(scale[note]))
         else
           -- engine.noteOff(0)    
         end
-        -- message = " G:" .. string.format("%02x",gate) .. "/" .. string.format("%02x",opd_gates) .. " O:" .. (op or "--") .. " A:" .. (arg and string.format("%02x",arg) or "--") 
-        -- print(message)
         screen.dirty = true
         redraw()
       end
@@ -239,9 +326,20 @@ function turn(e, d) ----------------------------- an encoder has turned
   end
   if active_mode == 1 then
     if e == 2 then
+      -- if keys[1] == 1 and keys[2] == 1 then
+      --   if focus_control == 1 then
+      --     gate_op_stab = util.clamp(gate_op_stab+d/10,0,1)
+      --   elseif focus_control == 2 then
+      --     gates_stab = util.clamp(gates_stab+d/10,0,1)
+      --   elseif focus_control == 3 then
+      --     gates_2_stab = util.clamp(gates_2_stab+d/10,0,1)
+      --   end
+      -- elseif keys[1] == 1 then
       if keys[1] == 1 then
+        -- NOTE we invert the appearance of prob, since it's labeled randomness
+        d = d * -1
         if focus_control == 1 then
-          op_p = util.clamp(op_p+d/10,0,1)
+          gate_op_p = util.clamp(gate_op_p+d/10,0,1)
         elseif focus_control == 2 then
           gates_p = util.clamp(gates_p+d/10,0,1)
         elseif focus_control == 3 then
@@ -278,7 +376,11 @@ function turn(e, d) ----------------------------- an encoder has turned
     end
   elseif active_mode == 2 then
     if (e==2) then
+      -- if keys[2] == 1 and keys[1] == 1 then
+      --   note_bit_stabs[focus_control] = util.clamp(note_bit_stabs[focus_control] + d/10,0,1)
+      -- elseif keys[1] == 1 then
       if keys[1] == 1 then
+        d = d * -1
         note_bit_ps[focus_control] = util.clamp(note_bit_ps[focus_control] + d/10,0,1)
       else
         focus_control= util.clamp(focus_control + d,1,4)
@@ -305,7 +407,7 @@ function key(k, z)
   screen_dirty = true
   if active_mode == 1 then
     if focus_control == 1 then
-      -- complex op assignment logic here
+      -- complex gate_op assignment logic here
       if (keys[1] ~= nil) then
         if (keys[2] ~= nil) then
           gate_op = "nand"
@@ -358,28 +460,52 @@ function redraw_clock() ----- a clock that draws space
   end
 end
 
-function draw_bin(num,bits,x,y,w,h,level,on_h_ratio)
-  level = level ~= nil and level or 6
+-- TODO redo for add screen but simple just vertical scaling of steps
+function draw_bin(num,bits,x,y,w,h,focus,on_h_ratio,on_w_ratio)
   on_h_ratio = on_h_ratio ~= nil and on_h_ratio or 1
+  on_w_ratio = on_w_ratio ~= nil and on_w_ratio or 1
   local xd = w/bits
   -- screen.level(level)
   -- screen.rect(x,y,w,h)
   -- screen.stroke()
-  for i=1,bits do
-    local do_highlight = (8 - (tick - 1) % 8) == i
+  for j=1,bits do
+    local i = bits - (j - 1)
+    -- local do_highlight = (8 - (tick - 1) % 8) == i
+    local do_highlight = (1 + (tick - 1) % 8) == j
+    local value = bit8_get_bit(num,j)
+    screen.blend_mode(2)
     -- draw background
-    screen.level(do_highlight and 1 or 0)
-    screen.rect(x+(i-1)*xd,y,xd,h)
-    screen.fill()
-    -- if on, draw overlay
-    if bit32.band(num,2^(bits-i)) ~= 0 then
-      screen.level(do_highlight and 15 or level)
+    -- screen.level(do_highlight and 3 or 1)
+    -- screen.rect(x+(i-1)*xd,y,xd,h)
+    -- screen.fill()
+    -- if on or stability mode, draw prob overlay
+    if value ~= 0 or prob_mode == 1 then
+      screen.level(value ~= 0 and 4 or 2)
       screen.rect(x+(i-1)*xd,y + h * (1 - on_h_ratio),xd,h * on_h_ratio)
       screen.fill()
     end
+    -- if on, draw status overlay
+    if value ~= 0 then
+      screen.level(8)
+      screen.rect(x+(i-1)*xd,y,xd,h)
+      -- screen.rect(x+(i-1)*xd,y + h * (1 - on_h_ratio),xd,h * on_h_ratio)
+      screen.fill()
+    end
+    -- draw highlight overlay
+    if do_highlight then
+      screen.level(3)
+      screen.rect(x+(i-1)*xd,y,xd,h)
+      screen.fill()
+    end
+    -- draw focus overlay
+    if focus then
+      screen.level(15)
+      screen.rect(x,y,w,h)
+      screen.stroke()
+    end
+    screen.blend_mode(1)
   end
 end
-
 
 function redraw() 
   screen.clear() --------------- clear space
@@ -391,14 +517,25 @@ function redraw()
     screen.font_size(24) ---------- set the size to 8
     -- screen.move(4,24)
     -- screen.text(hexfmt(gates))
+    -- Box around op
+    if focus_control == 1 then
+      screen.rect(40,9,48,18)
+      screen.level(1)
+      screen.fill()
+      screen.level(13)
+      screen.rect(40,9,48,18)
+      screen.stroke()
+    end
     screen.move(64,24)
     local op_level = focus_control == 1 and 10 or 2 
     screen.level(op_level)
-    screen.text_center(op or "--")
-    local op_text_width = screen.text_extents(op or "--")
+    screen.text_center(gate_op or "--")
+    local op_text_width = screen.text_extents(gate_op or "--")
     screen.move(64-math.floor(op_text_width/2)-6,24)
-    screen.level(math.ceil(op_level * op_p))
+    screen.level(math.ceil(op_level * (1-gate_op_p)))
+    screen.blend_mode(8)
     screen.text("!")
+    screen.blend_mode(1)
     -- screen.move(128,24)
     -- screen.text_right(hexfmt(gates_2))
     screen.font_size(8) ---------- set the size to 8
@@ -407,8 +544,9 @@ function redraw()
     -- screen.move(4, 7) ---------- move the pointer to x = 64, y = 32
     -- screen.text(message) 
     -- screen.fill() ---------------- fill the termini and message at once
-    draw_bin(gates,8,10,28,106,8,focus_control == 2 and 8 or 2,gates_p)
-    draw_bin(gates_2,8,10,36,106,8,focus_control == 3 and 8 or 2,gates_2_p)
+    -- NOTE we display probability as "randomness", so as inverse
+    draw_bin(gates,8,10,28,106,period,focus_control == 2,1-gates_p)
+    draw_bin(gates_2,8,10,36,106,period,focus_control == 3,1-gates_2_p)
     screen.level(15)
   elseif (active_mode == 2) then
     -- TODO add hex totals for each step
@@ -418,7 +556,7 @@ function redraw()
       screen.level((focus_control == i) and 15 or 4)
       screen.move(1,i*10)
       screen.text(math.floor(2^(i-1)))
-      draw_bin(note_bit_bytes[i],8,10,i*10-5,106,8,focus_control == i and 8 or 2,note_bit_ps[i])
+      draw_bin(note_bit_bytes[i],8,10,i*10-5,106,period,focus_control == i,1-note_bit_ps[i],1)
     end
   end
   for i=1,8 do
@@ -427,7 +565,8 @@ function redraw()
     screen.text_center(notes[9-i] and MusicUtil.note_num_to_name(scale[notes[9-i]]) or "")
     screen.fill()
   end
-  draw_bin(opd_gates,8,10,54,106,8,6,1)
+  -- TODO fix calcd gates
+  draw_bin(calcd_gates,8,10,54,106,period,true,0,0)
   screen.update() -------------- update space
 end
 
