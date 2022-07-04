@@ -232,24 +232,24 @@ function init()
   prob_mode = params:get("prob_mode")
 
   -- TODO fix swing (see loop below)
-  params:add_group("Clock",1)
+  params:add_group("Clock",2)
   params:add_number("div","div",1,16,4,function(param) return param:get() end,false)
   params:set_action("div", function(n) div = n end)
   div = params:get("div")
   -- -- TODO add clock tempo control here for easy access
-  -- swing_spec = controlspec.def{
-  --   min=0.00,
-  --   max=100.0,
-  --   warp='lin',
-  --   step=1,
-  --   default=50,
-  --   quantum=0.01,
-  --   wrap=false,
-  --   units='%'
-  -- }
-  -- params:add_control("swing","swing",swing_spec)
-  -- params:set_action("swing", function(n) swing = n end)
-  -- swing = params:get("swing")
+  swing_spec = controlspec.def{
+    min=0.00,
+    max=100.0,
+    warp='lin',
+    step=1,
+    default=50,
+    quantum=0.01,
+    wrap=false,
+    units='%'
+  }
+  params:add_control("swing","swing",swing_spec)
+  params:set_action("swing", function(n) swing = n end)
+  swing = params:get("swing")
 
   params:add_separator("Output")
   params:add_group("PolyPerc",3)
@@ -339,18 +339,10 @@ function init()
         screen.dirty = true
         redraw()
         -- 50% swing is 100% tick width all the time
-        -- TODO fix swing, most likely need to quantize to internal clock pulses
         -- TODO handle div ~= 4
         -- See https://github.com/21echoes/cyrene/blob/master/lib/sequencer.lua#L388
-        -- tick_width = (2 * swing/100) / div
-        -- round to nearest 32nd
-        -- tick_width = math.floor(tick_width * 32) / 32
-        -- tick_width = (tick % 2 == 1) and tick_width or (2/div) - tick_width
-        -- tick_width = (tick % 2 == 1) and (2 * swing/100) or 2 - (2 * swing/100)
-        -- tick_width = tick_width / div
-        local tick_width = 1/div
-        -- print(tick_width)
-        clock.sync(tick_width)
+        swing_offset = -1 * (1 - swing/100) * 2 /div
+        clock.sync(2/div,(tick % 2 == 1) and swing_offset or 0)
       end
     end
   )
