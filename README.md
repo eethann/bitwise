@@ -1,6 +1,6 @@
 BITWISE
 
-A stochastic bitwise sequencer
+A probablistic bitwise sequencer
 intended for live play.
 
 UI is split into two pages: 
@@ -10,7 +10,8 @@ ALL PAGES
 * k1: exit
 * e1: select page
 * e2: select control
-* [+ k1]: change probability
+* [+ k1]: Set randomness
+* [+ k1 k2]: TBD
 
 GATES PAGE controls
 * OPERATOR:
@@ -49,19 +50,31 @@ bytes (one for each power
 of 2).
 
 All controls can have a 
-probability. For any byte, 
-the probability is the 
+randomness amount. The
+higher the randomness
+the more likely that 
+control will be unstable.
+ Probability has two possible 
+modes (set in a parameter).
+
+"Stability" mode:
+Acts like an ASR, prob
+is the likelihood any bit
+changes when it comes up.
+Off means bits are totally
+stable, middle means they 
+have a 50% chance of
+flipping, and 100% means
+they will always flip.
+
+"Trigger mode"
+For any byte, the 
+probability is the 
 likelihood that a 1 bit is 
-actually on. 
+actually on when it
+comes up..
+ 
 For the operator the 
 probability chooses between 
 the op and its logical 
-inverse.
-
-TODO
-* Check all funcs against docs
-* POST
-* EC: implement grid
-* Clean up single-bit gate calc
-* replace most state vars with params
-* title all pages ?
+inverse, in both modes.
