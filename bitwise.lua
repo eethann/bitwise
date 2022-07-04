@@ -1,4 +1,6 @@
 -- BITWISE
+-- v1.3.0 @spectralclockworks
+-- https://llllllll.co/t/bitwise/56659
 --
 -- A probablistic bitwise sequencer
 -- intended for live play.
@@ -9,6 +11,7 @@
 -- ALL PAGES
 -- > k1: exit
 -- > e1: select page
+-- > [+ k1]: Lock random
 -- > e2: select control
 -- > [+ k1]: Set randomness
 -- > [+ k1 k2]: TBD
@@ -78,6 +81,15 @@
 -- probability chooses between 
 -- the op and its logical 
 -- inverse, in both modes.
+--
+-- Holding K1 and turning
+-- E1 clockwise will "lock"
+-- all randomness, looping
+-- without changes. Turning
+-- counter-clockwise will 
+-- "unlock" and re-enable
+-- the randomness levels
+-- of each control.
 -- 
 -- TODO
 -- * Add MIDI
@@ -157,7 +169,8 @@ local function is_bit_set(n,b)
 end
 
 local function coin_flip(p)
-  return (p == 1 and true)
+  return lock_probs 
+    or (p == 1 and true)
     or (p == 0 and false)
     or (math.random() < p)
 end
@@ -238,6 +251,21 @@ function init()
   -- params:set_action("swing", function(n) swing = n end)
   -- swing = params:get("swing")
 
+  params:add_separator("Output")
+  params:add_group("PolyPerc",3)
+  local pp_cutoff_spec = controlspec.FREQ
+  pp_cutoff_spec.default = 1000
+  params:add_control("pp_cutoff","cutoff",pp_cutoff_spec)
+  params:set_action("pp_cutoff", function(n) engine.cutoff(n) end)
+  local pp_pw_spec = controlspec.UNIPOLAR
+  pp_pw_spec.default = 0.5
+  params:add_control("pp_pw","pw",controlspec.UNIPOLAR)
+  params:set_action("pp_pw", function(n) engine.pw(n) end)
+  local pp_release_spec = controlspec.UNIPOLAR
+  pp_release_spec.default = 0.5
+  params:add_control("pp_release","release",controlspec.UNIPOLAR)
+  params:set_action("pp_release", function(n) engine.release(n) end)
+
   -- State vars
   notes = {}
   note_bit_bytes = {
@@ -250,6 +278,7 @@ function init()
   gates_2 = 0x33
   gate_op = "or"
 
+  lock_probs = false
   note_bit_ps = {1,1,1,1}
   gates_2_p = 1
   gates_p = 1
@@ -269,15 +298,12 @@ function init()
   div = 4
   tick = 0
   
+  -- TODO add real support for start/stop clock
   sequence = clock.run(
     function()
+      clock.sync(4)
       while true do
         tick = tick + 1
-        -- 50% swing is 100% tick width all the time
-        -- TODO fix swing, most likely need to quantize to internal clock pulses
-        -- local tick_width = (tick % 2 == 1) and (2 * swing/100) or (2 * (1 - swing/100))
-        local tick_width = 1
-        clock.sync(tick_width / div)
         -- tick = math.floor(clock.get_beats()*div)
         bit_num = ((tick - 1) % period) + 1
         gate_op = gate_op -- or seq_op
@@ -298,7 +324,7 @@ function init()
           calcd_gates = bit8_set_bit(calcd_gates,bit_num, bit8_get_bit(new_calcd_gates,bit_num))
         end
         -- gate op prob always functions the same (unstable ops feels too random)
-        local new_bit = bit8_get_bit(coin_flip(gate_op_p) and new_calcd_gates or bit8_bnot(calcd_gates),bit_num)
+        local new_bit = bit8_get_bit(coin_flip(gate_op_p) and new_calcd_gates or bit8_bnot(new_calcd_gates),bit_num)
         calcd_gates = bit8_set_bit(calcd_gates,bit_num,new_bit)
         -- get_note_bit_bytes_step includes trigger prob_mode logic
         -- TODO refactor trigger logic out of get_note_bit_bytes_step
@@ -312,6 +338,19 @@ function init()
         end
         screen.dirty = true
         redraw()
+        -- 50% swing is 100% tick width all the time
+        -- TODO fix swing, most likely need to quantize to internal clock pulses
+        -- TODO handle div ~= 4
+        -- See https://github.com/21echoes/cyrene/blob/master/lib/sequencer.lua#L388
+        -- tick_width = (2 * swing/100) / div
+        -- round to nearest 32nd
+        -- tick_width = math.floor(tick_width * 32) / 32
+        -- tick_width = (tick % 2 == 1) and tick_width or (2/div) - tick_width
+        -- tick_width = (tick % 2 == 1) and (2 * swing/100) or 2 - (2 * swing/100)
+        -- tick_width = tick_width / div
+        local tick_width = 1/div
+        -- print(tick_width)
+        clock.sync(tick_width)
       end
     end
   )
@@ -332,8 +371,12 @@ end
 function turn(e, d) ----------------------------- an encoder has turned
   screen_dirty = true
   if e == 1 then
-    active_mode = util.clamp(active_mode + d,1,2)
-    focus_control = 1
+    if (keys[1] == 1) then
+      lock_probs = d > 0
+    else
+      active_mode = util.clamp(active_mode + d,1,2)
+      focus_control = 1
+    end
     redraw()
     return
   end
@@ -581,6 +624,11 @@ function redraw()
   end
   -- TODO fix calcd gates
   draw_bin(calcd_gates,8,10,54,106,period,true,0,0)
+  if lock_probs then
+    screen.fill(15)
+    screen.rect(1,1,126,62)
+    screen.stroke()
+  end
   screen.update() -------------- update space
 end
 
