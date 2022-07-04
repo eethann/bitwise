@@ -214,7 +214,10 @@ function init()
   prob_mode = params:get("prob_mode")
 
   -- TODO fix swing (see loop below)
-  -- params:add_group("Clock",1)
+  params:add_group("Clock",1)
+  params:add_number("div","div",1,16,4,function(param) return param:get() end,false)
+  params:set_action("div", function(n) div = n end)
+  div = params:get("div")
   -- -- TODO add clock tempo control here for easy access
   -- swing_spec = controlspec.def{
   --   min=0.00,
@@ -523,19 +526,20 @@ function redraw()
     -- screen.move(4,24)
     -- screen.text(hexfmt(gates))
     -- Box around op
+    local op_text_width = screen.text_extents(gate_op or "--")
     if focus_control == 1 then
-      screen.rect(40,9,48,18)
+      local box_w = op_text_width + 12
+      screen.rect((128-box_w)/2,8,box_w,18)
       screen.level(1)
       screen.fill()
       screen.level(13)
-      screen.rect(40,9,48,18)
+      screen.rect((128-box_w)/2,8,box_w,18)
       screen.stroke()
     end
     screen.move(64,24)
     local op_level = focus_control == 1 and 10 or 2 
     screen.level(op_level)
     screen.text_center(gate_op or "--")
-    local op_text_width = screen.text_extents(gate_op or "--")
     screen.move(64-math.floor(op_text_width/2)-6,24)
     screen.level(math.ceil(op_level * (1-gate_op_p)))
     screen.blend_mode(8)
