@@ -200,6 +200,25 @@ function set_base_note(n)
   build_scale()
 end
 
+-- MIDI/poly status vars
+on_notes = {}
+last_note = nil
+  
+function set_midi_out(state)
+  if state==1 then
+    -- TODO add param to select midi device
+    out_midi = midi.connect(1)
+  else
+    for k,v in pairs(on_notes) do
+      if v then
+        out_midi:note_off(k)
+      end
+    end
+    -- out_midi:note_off(0)
+    out_midi = nil
+  end
+end
+
 function init()
   message = "BITWISE"
   screen_dirty = true
@@ -261,6 +280,11 @@ function init()
   swing = params:get("swing")
 
   params:add_separator("Output")
+
+  params:add_binary("midi_out", "MIDI out (on/off)", "toggle")
+  -- TODO Change to setter func
+  params:set_action("midi_out", set_midi_out)
+
   params:add_group("PolyPerc",3)
   local pp_cutoff_spec = controlspec.FREQ
   pp_cutoff_spec.default = 1000
@@ -307,9 +331,6 @@ function init()
   div = 4
   tick = 0
 
-  on_notes = {}
-  last_note = nil
-  
   -- TODO add real support for start/stop clock
   sequence = clock.run(
     function()
@@ -344,9 +365,20 @@ function init()
         notes[bit_num] = note
         -- TODO add MIDI out option
         if is_bit_set(calcd_gates,bit_num) and scale[note] then
-          -- TODO support note offs too
+          -- TODO make engine out optional
           engine.hz(MusicUtil.note_num_to_freq(scale[note]))
+          -- TODO support note offs too
+          if out_midi then
+            last_note = note
+            on_notes[note] = true
+            out_midi:note_on(note,127)
+          end
         else
+          if out_midi and on_notes[last_note] then
+            out_midi:note_off(last_note)
+            on_notes[last_note] = nil
+            last_note = nil
+          end
           -- engine.noteOff(0)    
         end
         screen.dirty = true
