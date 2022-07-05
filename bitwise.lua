@@ -253,7 +253,7 @@ function init()
   params:add_group("Probability",2)
   params:add_binary("lock_probs", "Lock Current State (on/off)", "toggle")
   -- TODO Change to setter func
-  params:set_action("lock_probs", function(v) lock_probs = v end)
+  params:set_action("lock_probs", function(v) lock_probs = v==1 end)
 
   params:add_option("prob_mode","Probability Mode",{"stability","trigger"},1)
   params:set_action("prob_mode", function(n) prob_mode = n end)
