@@ -231,7 +231,11 @@ function init()
   params:add_number("interval_3","interval 3", -24, 24, 4)
   params:add_number("interval_4","interval 4", -24, 24, 8)
 
-  params:add_group("Probability",1)
+  params:add_group("Probability",2)
+  params:add_binary("lock_probs", "Lock Current State (on/off)", "toggle")
+  -- TODO Change to setter func
+  params:set_action("lock_probs", function(v) lock_probs = v end)
+
   params:add_option("prob_mode","Probability Mode",{"stability","trigger"},1)
   params:set_action("prob_mode", function(n) prob_mode = n end)
   prob_mode = params:get("prob_mode")
