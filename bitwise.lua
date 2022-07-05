@@ -184,15 +184,20 @@ local function get_note_bit_bytes_step(step)
   return note
 end
 
+local function prob_flip_bit(num,bit,prob)
+  local mask = bit32.lshift(1,bit-1)
+  return coin_flip(prob) and num or bit8(bit32.bxor(num,mask))
+  -- return coin_flip(prob) and num or bit8_set_bit(num, bit, bit8_get_bit(num, bit) == 1 and 0 or 1)
+end
+
 -- TODO separate root_note from base_note so you can have root_note for a scale with a different base note
 function build_scale() 
   scale = MusicUtil.generate_scale(params:get("base_note"), params:get("scale_mode"),8)
 end
 
-local function prob_flip_bit(num,bit,prob)
-  local mask = bit32.lshift(1,bit-1)
-  return coin_flip(prob) and num or bit8(bit32.bxor(num,mask))
-  -- return coin_flip(prob) and num or bit8_set_bit(num, bit, bit8_get_bit(num, bit) == 1 and 0 or 1)
+function set_base_note(n)
+  base_note = n
+  build_scale()
 end
 
 function init()
@@ -202,12 +207,12 @@ function init()
 
   params:add_separator("Bitwise")
   params:add_group("Notes",6)
-  local base_note_spec = controlspec.MIDINOTE
+  local base_note_spec = controlspec.MIDINOTE:copy()
   base_note_spec.default = 24
-  base_note_spec.quantum = 1
-  params:add_control("base_note","base note",base_note_spec)
+  base_note_spec.step = 1
+  params:add_control("base_note","base note",base_note_spec,function(param) return MusicUtil.note_num_to_name(param:get(),true) end)
   -- TODO debug why this is getting set to fractional in the params screen
-  params:set_action("base_note", function(n) base_note = math.floor(n) end)
+  params:set_action("base_note", set_base_note)
   base_note = params:get("base_note")
 
   local scale_names = {}
@@ -297,6 +302,9 @@ function init()
   period = 8
   div = 4
   tick = 0
+
+  on_notes = {}
+  last_note = nil
   
   -- TODO add real support for start/stop clock
   sequence = clock.run(
@@ -331,7 +339,8 @@ function init()
         local note = base_note + get_note_bit_bytes_step(bit_num)
         notes[bit_num] = note
         -- TODO add MIDI out option
-        if is_bit_set(calcd_gates,bit_num) then
+        if is_bit_set(calcd_gates,bit_num) and scale[note] then
+          -- TODO support note offs too
           engine.hz(MusicUtil.note_num_to_freq(scale[note]))
         else
           -- engine.noteOff(0)    
@@ -611,7 +620,7 @@ function redraw()
   for i=1,8 do
     screen.move(16+((i-1)*106/8),52)
     screen.level(8 - ((tick - 1) % 8) == i and 15 or 2)
-    screen.text_center(notes[9-i] and MusicUtil.note_num_to_name(scale[notes[9-i]]) or "")
+    screen.text_center(notes[9-i] and scale[notes[9-i]] and MusicUtil.note_num_to_name(scale[notes[9-i]]) or "")
     screen.fill()
   end
   -- TODO fix calcd gates
