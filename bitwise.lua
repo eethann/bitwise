@@ -361,12 +361,13 @@ function init()
         calcd_gates = bit8_set_bit(calcd_gates,bit_num,new_bit)
         -- get_note_bit_bytes_step includes trigger prob_mode logic
         -- TODO refactor trigger logic out of get_note_bit_bytes_step
-        local note = base_note + get_note_bit_bytes_step(bit_num)
+        local degree = get_note_bit_bytes_step(bit_num)
+        local note = scale[degree] or base_note
         notes[bit_num] = note
         -- TODO add MIDI out option
-        if is_bit_set(calcd_gates,bit_num) and scale[note] then
+        if is_bit_set(calcd_gates,bit_num) then
           -- TODO make engine out optional
-          engine.hz(MusicUtil.note_num_to_freq(scale[note]))
+          engine.hz(MusicUtil.note_num_to_freq(note))
           -- TODO support note offs too
           if out_midi then
             last_note = note
